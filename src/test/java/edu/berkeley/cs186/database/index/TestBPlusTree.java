@@ -134,6 +134,7 @@ public class TestBPlusTree {
         //      (    4        7         10        _   )
         //       /       |         |         \
         // (1 2 3 _) (4 5 6 _) (7 8 9 _) (10 11 _ _)
+
         String leaf0 = "((1 (1 1)) (2 (2 2)) (3 (3 3)))";
         String leaf1 = "((4 (4 4)) (5 (5 5)) (6 (6 6)))";
         String leaf2 = "((7 (7 7)) (8 (8 8)) (9 (9 9)))";
@@ -467,5 +468,10 @@ public class TestBPlusTree {
         assertEquals(3, LeafNode.maxOrder(pageSizeInBytes, keySchema));
         assertEquals(3, InnerNode.maxOrder(pageSizeInBytes, keySchema));
         assertEquals(3, BPlusTree.maxOrder(pageSizeInBytes, keySchema));
+    }
+
+    @Test
+    public void testEverythingDeleted() {
+        // your test code here
     }
 }

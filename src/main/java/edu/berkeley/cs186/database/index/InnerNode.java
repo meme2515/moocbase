@@ -7,9 +7,11 @@ import edu.berkeley.cs186.database.common.Buffer;
 import edu.berkeley.cs186.database.common.Pair;
 import edu.berkeley.cs186.database.concurrency.LockContext;
 import edu.berkeley.cs186.database.databox.DataBox;
+import edu.berkeley.cs186.database.databox.IntDataBox;
 import edu.berkeley.cs186.database.databox.Type;
 import edu.berkeley.cs186.database.memory.BufferManager;
 import edu.berkeley.cs186.database.memory.Page;
+import edu.berkeley.cs186.database.table.Record;
 import edu.berkeley.cs186.database.table.RecordId;
 
 /**
@@ -80,7 +82,7 @@ class InnerNode extends BPlusNode {
     public LeafNode get(DataBox key) {
         // TODO(hw2): implement
 
-        return null;
+        return getChild(numLessThanEqual(key, keys)).get(key);
     }
 
     // See BPlusNode.getLeftmostLeaf.
@@ -89,14 +91,49 @@ class InnerNode extends BPlusNode {
         assert(children.size() > 0);
         // TODO(hw2): implement
 
-        return null;
+        return getChild(0).getLeftmostLeaf();
     }
 
+
+    // See BPlusNode.put.
     // See BPlusNode.put.
     @Override
     public Optional<Pair<DataBox, Long>> put(DataBox key, RecordId rid) {
         // TODO(hw2): implement
 
+        BPlusNode child = getChild(numLessThanEqual(key, keys));
+        Optional<Pair<DataBox, Long>> tempPair = child.put(key, rid);
+        if (tempPair.isPresent()) {
+            DataBox splitKey = tempPair.get().getFirst();
+            long rightPageNum = tempPair.get().getSecond();
+
+            keys.add(splitKey);
+            Collections.sort(keys);
+            children.add(keys.indexOf(splitKey) + 1, rightPageNum);
+            sync();
+
+            // Determine if node overflows.
+            int d = metadata.getOrder();
+            if (keys.size() > 2 * d) {
+                List<DataBox> leftKeys = keys.subList(0, d);
+                List<Long> leftChildren = children.subList(0, d + 1);
+                List<DataBox> rightKeys = keys.subList(d + 1, keys.size());
+                List<Long> rightChildren = children.subList(d + 1, children.size());
+
+                DataBox innerSplitKey = keys.get(d);
+
+                keys = leftKeys;
+                children = leftChildren;
+
+                InnerNode rightInner = new InnerNode(metadata, bufferManager,
+                        bufferManager.fetchNewPage(treeContext, metadata.getPartNum(), false),
+                        rightKeys, rightChildren, treeContext);
+                sync();
+                return Optional.of(new Pair(innerSplitKey, rightInner.getPage().getPageNum()));
+            } else {
+                return Optional.empty();
+            }
+        }
         return Optional.empty();
     }
 
@@ -106,6 +143,42 @@ class InnerNode extends BPlusNode {
             float fillFactor) {
         // TODO(hw2): implement
 
+        Optional<Pair<DataBox, Long>> tempPair;
+        int d = metadata.getOrder();
+        int currentChild = keys.size();
+
+        BPlusNode child = getChild(currentChild);
+        tempPair = child.bulkLoad(data, fillFactor);
+
+        if (tempPair.isPresent()) {
+            for (int i=currentChild+1; i<2*d; ++i) {
+                children.add(tempPair.get().getSecond());
+                keys.add(tempPair.get().getFirst());
+                child = getChild(i);
+                tempPair = child.bulkLoad(data, fillFactor);
+                if (!tempPair.isPresent()) {
+                    return Optional.empty();
+                }
+                sync();
+            }
+            if (data.hasNext()) {
+                List<DataBox> leftKeys = keys.subList(0, d);
+                List<Long> leftChildren = children.subList(0, d + 1);
+                List<DataBox> rightKeys = keys.subList(d + 1, keys.size());
+                List<Long> rightChildren = children.subList(d + 1, children.size());
+
+                DataBox innerSplitKey = keys.get(d);
+
+                keys = leftKeys;
+                children = leftChildren;
+
+                InnerNode rightInner = new InnerNode(metadata, bufferManager,
+                        bufferManager.fetchNewPage(treeContext, metadata.getPartNum(), false),
+                        rightKeys, rightChildren, treeContext);
+                sync();
+                return Optional.of(new Pair(innerSplitKey, rightInner.getPage().getPageNum()));
+            }
+        }
         return Optional.empty();
     }
 
@@ -114,6 +187,7 @@ class InnerNode extends BPlusNode {
     public void remove(DataBox key) {
         // TODO(hw2): implement
 
+        getChild(numLessThanEqual(key, keys)).remove(key);
         return;
     }
 

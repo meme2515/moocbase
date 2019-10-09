@@ -149,6 +149,8 @@ public class TestLeafNode {
                 assertEquals(Optional.of(rid), leaf.getKey(key));
             }
         }
+        RecordId rid = new RecordId(11, (short) 11);
+        assertEquals(Optional.of(new Pair(new IntDataBox(5), (long) 1)), leaf.put(new IntDataBox(11), rid));
     }
 
     @Test

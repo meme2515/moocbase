@@ -16,6 +16,9 @@ import edu.berkeley.cs186.database.io.DiskSpaceManager;
 import edu.berkeley.cs186.database.memory.BufferManager;
 import edu.berkeley.cs186.database.table.RecordId;
 
+import javax.swing.text.html.Option;
+import javax.xml.crypto.Data;
+
 /**
  * A persistent B+ tree.
  *
@@ -137,9 +140,12 @@ public class BPlusTree {
     public Optional<RecordId> get(DataBox key) {
         typecheck(key);
         // TODO(hw2): implement
+
+        LeafNode leaf = root.get(key);
+
         // TODO(hw4_part2): B+ tree locking
 
-        return Optional.empty();
+        return leaf.getKey(key);
     }
 
     /**
@@ -190,9 +196,9 @@ public class BPlusTree {
      */
     public Iterator<RecordId> scanAll() {
         // TODO(hw2): Return a BPlusTreeIterator.
-        // TODO(hw4_part2): B+ tree locking
 
-        return Collections.emptyIterator();
+        return new BPlusTreeIterator(root.getLeftmostLeaf().getKeys().get(0));
+        // TODO(hw4_part2): B+ tree locking
     }
 
     /**
@@ -221,9 +227,10 @@ public class BPlusTree {
     public Iterator<RecordId> scanGreaterEqual(DataBox key) {
         typecheck(key);
         // TODO(hw2): Return a BPlusTreeIterator.
+
+        return new BPlusTreeIterator(key);
         // TODO(hw4_part2): B+ tree locking
 
-        return Collections.emptyIterator();
     }
 
     /**
@@ -238,6 +245,21 @@ public class BPlusTree {
     public void put(DataBox key, RecordId rid) {
         typecheck(key);
         // TODO(hw2): implement
+
+        Optional<Pair<DataBox, Long>> rightNode = root.put(key, rid);
+        if (rightNode.isPresent()) {
+            DataBox splitKey = rightNode.get().getFirst();
+            Long rightNodePage = rightNode.get().getSecond();
+
+            ArrayList<DataBox> keys = new ArrayList<>();
+            ArrayList<Long> children = new ArrayList<>();
+
+            keys.add(splitKey);
+            children.add(root.getPage().getPageNum());
+            children.add(rightNodePage);
+
+            root = new InnerNode(metadata, bufferManager, keys, children, lockContext);
+        }
         // TODO(hw4_part2): B+ tree locking
 
         return;
@@ -260,6 +282,28 @@ public class BPlusTree {
      */
     public void bulkLoad(Iterator<Pair<DataBox, RecordId>> data, float fillFactor) {
         // TODO(hw2): implement
+
+        if (!(root instanceof LeafNode) | !(((LeafNode) root).publicGetKeys().size() == 0)) {
+            throw new BPlusTreeException("Root must be empty.");
+        }
+
+        while (data.hasNext()) {
+            Optional<Pair<DataBox, Long>> rightNode = root.bulkLoad(data, fillFactor);
+            if (rightNode.isPresent()) {
+                DataBox splitKey = rightNode.get().getFirst();
+                Long rightNodePage = rightNode.get().getSecond();
+
+                ArrayList<DataBox> keys = new ArrayList<>();
+                ArrayList<Long> children = new ArrayList<>();
+
+                keys.add(splitKey);
+                children.add(root.getPage().getPageNum());
+                children.add(rightNodePage);
+
+                root = new InnerNode(metadata, bufferManager, keys, children, lockContext);
+            }
+        }
+
         // TODO(hw4_part2): B+ tree locking
 
         return;
@@ -279,6 +323,8 @@ public class BPlusTree {
     public void remove(DataBox key) {
         typecheck(key);
         // TODO(hw2): implement
+
+        root.remove(key);
         // TODO(hw4_part2): B+ tree locking
 
         return;
@@ -383,11 +429,37 @@ public class BPlusTree {
     // Iterator ////////////////////////////////////////////////////////////////
     private class BPlusTreeIterator implements Iterator<RecordId> {
         // TODO(hw2): Add whatever fields and constructors you want here.
+        // Plan: find left-most leaf, iterate through first leafnode.
+        // Return right sibling upon reaching end of node. Iterate. Repeat process until there is no more data.
+        private LeafNode currentLeaf;
+        private Iterator<RecordId> iterator;
+
+        public BPlusTreeIterator(DataBox beginKey) {
+            currentLeaf = root.get(beginKey);
+            iterator = currentLeaf.scanGreaterEqual(beginKey);
+        }
 
         @Override
         public boolean hasNext() {
             // TODO(hw2): implement
 
+            if (iterator.hasNext()) {
+                return true;
+            } else if (currentLeaf.getRightSibling().isPresent()) {
+                if (currentLeaf.getRightSibling().get().scanAll().hasNext()) {
+                    return true;
+                } else if (!currentLeaf.getRightSibling().get().scanAll().hasNext()) {
+                    LeafNode tempNode = currentLeaf;
+                    while (tempNode.getRightSibling().isPresent() &&
+                            !tempNode.getRightSibling().get().scanAll().hasNext()) {
+                        tempNode = tempNode.getRightSibling().get();
+                    }
+                    if (tempNode.getRightSibling().isPresent()) {
+                        return true;
+                    }
+                    return false;
+                }
+            }
             return false;
         }
 
@@ -395,6 +467,26 @@ public class BPlusTree {
         public RecordId next() {
             // TODO(hw2): implement
 
+            if (iterator.hasNext()) {
+                return iterator.next();
+            } else if (currentLeaf.getRightSibling().isPresent()) {
+                if (currentLeaf.getRightSibling().get().scanAll().hasNext()) {
+                    currentLeaf = currentLeaf.getRightSibling().get();
+                    iterator = currentLeaf.scanAll();
+                    return iterator.next();
+                } else if (currentLeaf.getRightSibling().get().scanAll().hasNext()) {
+                    while (currentLeaf.getRightSibling().isPresent() &&
+                            !currentLeaf.getRightSibling().get().scanAll().hasNext()) {
+                        currentLeaf = currentLeaf.getRightSibling().get();
+                    }
+                    if (currentLeaf.getRightSibling().isPresent()) {
+                        currentLeaf = currentLeaf.getRightSibling().get();
+                        iterator = currentLeaf.scanAll();
+                        return iterator.next();
+                    }
+                    throw new NoSuchElementException();
+                }
+            }
             throw new NoSuchElementException();
         }
     }
