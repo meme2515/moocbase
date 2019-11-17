@@ -8,6 +8,8 @@ import edu.berkeley.cs186.database.databox.DataBox;
 import edu.berkeley.cs186.database.table.Record;
 import edu.berkeley.cs186.database.table.Schema;
 
+import javax.management.Query;
+
 /**
  * QueryPlan provides a set of functions to generate simple queries. Calling the methods corresponding
  * to SQL syntax stores the information in the QueryPlan, and calling execute generates and executes
@@ -230,15 +232,36 @@ public class QueryPlan {
         // Pass 1: Iterate through all single tables. For each single table, find
         // the lowest cost QueryOperator to access that table. Construct a mapping
         // of each table name to its lowest cost operator.
+        Map<Set, QueryOperator> map1Pass = new HashMap<>();
+        List<String> allTables = joinTableNames;
 
+        QueryOperator startOp = minCostSingleAccess(startTableName);
+        Set<String> startKey = new HashSet<>();
+        startKey.add(startTableName);
+        map1Pass.put(startKey, startOp);
+
+        for (String table : allTables) {
+            QueryOperator tableOp = minCostSingleAccess(table);
+            Set<String> key = new HashSet<>();
+            key.add(table);
+            map1Pass.put(key, tableOp);
+        }
         // Pass i: On each pass, use the results from the previous pass to find the
         // lowest cost joins with each single table. Repeat until all tables have
         // been joined.
+        Map<Set, QueryOperator> mapPrev = new HashMap<>(map1Pass);
 
+        while (mapPrev.size() > 1) {
+            mapPrev = minCostJoins(mapPrev, map1Pass);
+        }
         // Get the lowest cost operator from the last pass, add GROUP BY and SELECT
         // operators, and return an iterator on the final operator
-
-        return this.executeNaive(); // TODO(hw3_part2): Replace this!!! Allows you to test intermediate functionality
+        Set<String> finalKey = new HashSet<>(allTables);
+        finalKey.add(startTableName);
+        this.finalOperator = mapPrev.get(finalKey);
+        this.addGroupBy();
+        this.addProjects();
+        return this.finalOperator.iterator();
     }
 
     /**
@@ -325,20 +348,34 @@ public class QueryPlan {
      * pushed down select operators
      */
     QueryOperator minCostSingleAccess(String table) {
-        QueryOperator minOp = null;
+        QueryOperator minOp;
 
         // Find the cost of a sequential scan of the table
-        // minOp = new SequentialScanOperator(this.transaction, table);
+        minOp = new SequentialScanOperator(this.transaction, table);
 
         // TODO(hw3_part2): implement
 
         // 1. Find the cost of a sequential scan of the table
-
+        int minIO = minOp.getIOCost();
         // 2. For each eligible index column, find the cost of an index scan of the
         // table and retain the lowest cost operator
-
+        List<Integer> eligibleColumns = getEligibleIndexColumns(table);
+        int except = -1;
+        for (int i = 0; i < eligibleColumns.size(); ++i) {
+            String column = selectColumnNames.get(eligibleColumns.get(i));
+            PredicateOperator curPred = this.selectOperators.get(eligibleColumns.get(i));
+            DataBox curValue = this.selectDataBoxes.get(eligibleColumns.get(i));
+            QueryOperator indexOp = new IndexScanOperator(transaction, table, column, curPred, curValue);
+            int IO = indexOp.estimateIOCost();
+            if (IO < minIO) {
+                minIO = IO;
+                minOp = indexOp;
+                except = eligibleColumns.get(i);
+            }
+        }
         // 3. Push down SELECT predicates that apply to this table and that were not
         // used for an index scan
+        minOp = addEligibleSelections(minOp, except);
 
         return minOp;
     }
@@ -394,11 +431,14 @@ public class QueryPlan {
         //Input: pass1Map (each set is a singleton with one table and single table access query operator)
 
         //FOR EACH set of tables in prevMap:
-
+        for (Map.Entry<Set, QueryOperator> table : prevMap.entrySet()) {
         //FOR EACH join condition listed in the query
-
+            for (int i = 0; i < joinTableNames.size(); ++i) {
         //get the left side and the right side (table name and column)
-
+                String leftTable = getJoinLeftColumnNameByIndex(i)[0];
+                String leftColumn = getJoinLeftColumnNameByIndex(i)[1];
+                String rightTable = getJoinRightColumnNameByIndex(i)[0];
+                String rightColumn = getJoinRightColumnNameByIndex(i)[1];
         /*
          * Case 1. Set contains left table but not right, use pass1Map to
          * fetch the right operator to access the rightTable
@@ -411,7 +451,31 @@ public class QueryPlan {
          * --- Then given the operator, use minCostJoinType to calculate the cheapest join with that
          * and the previously joined tables.
          */
-
+                Set newSet = new HashSet<>(table.getKey());
+                QueryOperator minOp;
+                if (table.getKey().contains(leftTable) && !table.getKey().contains(rightTable)) {
+                    Set<String> rightKey = new HashSet<>(Arrays.asList(rightTable));
+                    QueryOperator rightQueryOperator = pass1Map.get(rightKey);
+                    minOp = minCostJoinType(table.getValue(), rightQueryOperator, leftColumn, rightColumn);
+                    newSet.add(rightTable);
+                } else if (!table.getKey().contains(leftTable) && table.getKey().contains(rightTable)) {
+                    Set<String> leftKey = new HashSet<>(Arrays.asList(leftTable));
+                    QueryOperator leftQueryOperator = pass1Map.get(leftKey);
+                    minOp = minCostJoinType(table.getValue(), leftQueryOperator, rightColumn, leftColumn);
+                    newSet.add(leftTable);
+                } else {
+                    continue;
+                }
+                QueryOperator Op = map.get(newSet);
+                if (Op != null) {
+                    if (minOp.estimateIOCost() < Op.estimateIOCost()) {
+                        map.put(newSet, minOp);
+                    }
+                } else {
+                    map.put(newSet, minOp);
+                }
+            }
+        }
         return map;
     }
 

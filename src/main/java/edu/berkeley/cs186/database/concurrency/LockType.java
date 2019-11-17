@@ -1,5 +1,10 @@
 package edu.berkeley.cs186.database.concurrency;
 
+import edu.berkeley.cs186.database.Database;
+
+import java.util.Arrays;
+import java.util.List;
+
 public enum LockType {
     S,   // shared
     X,   // exclusive
@@ -19,7 +24,35 @@ public enum LockType {
             throw new NullPointerException("null lock type");
         }
         // TODO(hw4_part1): implement
-
+        if (a.toString() == "NL" | b.toString() == "NL") {
+            return true;
+        } else if (a.toString() == "IS") {
+            if (b.toString() == "IS") {
+                return true;
+            } else if (b.toString() == "IX") {
+                return true;
+            } else if (b.toString() == "S") {
+                return true;
+            } else if (b.toString() == "SIX") {
+                return true;
+            }
+        } else if (a.toString() == "IX") {
+            if (b.toString() == "IS") {
+                return true;
+            } else if (b.toString() == "IX") {
+                return true;
+            }
+        } else if (a.toString() == "S") {
+            if (b.toString() == "IS") {
+                return true;
+            } else if (b.toString() == "S") {
+                return true;
+            }
+        } else if (a.toString() == "SIX") {
+            if (b.toString() == "IS") {
+                return true;
+            }
+        }
         return false;
     }
 
@@ -51,7 +84,19 @@ public enum LockType {
             throw new NullPointerException("null lock type");
         }
         // TODO(hw4_part1): implement
+        List<String> sChild = Arrays.asList("S", "IS");
+        List<String> sParent = Arrays.asList("IS", "IX");
+        List<String> xChild = Arrays.asList("X", "IX", "SIX");
+        List<String> xParent = Arrays.asList("IX", "SIX");
+        List<String> nParent = Arrays.asList("X", "S", "IS", "IX", "SIX", "NL");
 
+        if (sParent.contains(parentLockType.toString()) && sChild.contains(childLockType.toString())) {
+            return true;
+        } else if (xParent.contains(parentLockType.toString()) && xChild.contains(childLockType.toString())) {
+            return true;
+        } else if (nParent.contains(parentLockType.toString()) && childLockType.toString() == "NL") {
+            return true;
+        }
         return false;
     }
 
@@ -66,7 +111,17 @@ public enum LockType {
             throw new NullPointerException("null lock type");
         }
         // TODO(hw4_part1): implement
-
+        if (required.toString() == "NL") {
+            return true;
+        } else if (required.toString() == substitute.toString()) {
+            return true;
+        } else if (required.toString() == "S" && substitute.toString() == "X") {
+            return true;
+        } else if (required.toString() == "IS" && substitute.toString() == "IX") {
+            return true;
+        } else if ((required.toString() == "S" | required.toString() == "IX") && substitute.toString() == "SIX") {
+            return true;
+        }
         return false;
     }
 

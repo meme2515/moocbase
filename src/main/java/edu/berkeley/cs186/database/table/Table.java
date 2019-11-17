@@ -119,6 +119,7 @@ public class Table implements BacktrackingIterable<Record> {
      */
     public Table(String name, Schema schema, HeapFile heapFile, LockContext lockContext) {
         // TODO(hw4_part2): table locking code
+        LockUtil.ensureSufficientLockHeld(lockContext, LockType.X);
 
         this.name = name;
         this.heapFile = heapFile;
@@ -148,6 +149,15 @@ public class Table implements BacktrackingIterable<Record> {
         }
 
         this.lockContext = lockContext;
+    }
+
+    // hw 4 part 2
+    public void enableAutoEscalate() {
+        this.lockContext.enableAutoEscalate();
+    }
+
+    public void disableAutoEscalate() {
+        this.lockContext.disableAutoEscalate();
     }
 
     // Accessors /////////////////////////////////////////////////////////////////
@@ -316,10 +326,14 @@ public class Table implements BacktrackingIterable<Record> {
 
         validateRecordId(rid);
 
+        LockContext childContext = lockContext.childContext(rid.getPageNum());
+        LockUtil.ensureSufficientLockHeld(childContext, LockType.X);
+
         Record newRecord = schema.verify(values);
         Record oldRecord = getRecord(rid);
 
         Page page = fetchPage(rid.getPageNum());
+
         try {
             insertRecord(page, rid.getEntryNum(), newRecord);
 
@@ -341,7 +355,11 @@ public class Table implements BacktrackingIterable<Record> {
 
         validateRecordId(rid);
 
+        LockContext childContext = lockContext.childContext(rid.getPageNum());
+        LockUtil.ensureSufficientLockHeld(childContext, LockType.X);
+
         Page page = fetchPage(rid.getPageNum());
+
         try {
             Record record = getRecord(rid);
 
@@ -431,6 +449,7 @@ public class Table implements BacktrackingIterable<Record> {
     // Iterators /////////////////////////////////////////////////////////////////
     public BacktrackingIterator<RecordId> ridIterator() {
         // TODO(hw4_part2): reduce locking overhead for table scans
+        LockUtil.ensureSufficientLockHeld(lockContext, LockType.S);
 
         BacktrackingIterator<Page> iter = heapFile.iterator();
         return new ConcatBacktrackingIterator<>(new PageIterator(iter, false));

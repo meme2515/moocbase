@@ -728,6 +728,8 @@ public class Database implements AutoCloseable {
         @Override
         public Iterator<Record> sortedScan(String tableName, String columnName) {
             // TODO(hw4_part2): scan locking
+            LockContext tableContext = getTableContext(tableName);
+            LockUtil.ensureSufficientLockHeld(tableContext, LockType.S);
 
             Table tab = getTable(tableName);
             try {
@@ -747,6 +749,8 @@ public class Database implements AutoCloseable {
         @Override
         public Iterator<Record> sortedScanFrom(String tableName, String columnName, DataBox startValue) {
             // TODO(hw4_part2): scan locking
+            LockContext tableContext = getTableContext(tableName);
+            LockUtil.ensureSufficientLockHeld(tableContext, LockType.S);
 
             Table tab = getTable(tableName);
             Pair<String, BPlusTree> index = resolveIndexFromName(tableName, columnName);
@@ -936,6 +940,31 @@ public class Database implements AutoCloseable {
             this.deleteAllTempTables();
 
             // TODO(hw4_part2): release all locks
+            List<Lock> releaseLocks = lockManager.getLocks(this);
+            if (releaseLocks.size() == 0) {
+                return;
+            }
+            List<ResourceName> releaseNames = new ArrayList<>();
+
+            int releaseLockSize = releaseLocks.size();
+            int releasedLocks = 0;
+            int index = 0;
+
+            do {
+                Lock i = releaseLocks.get(index);
+                LockContext lockContext = LockContext.fromResourceName(lockManager, i.name);
+                try {
+                    lockContext.release(this);
+                    releasedLocks = releasedLocks + 1;
+                } catch (InvalidLockException | NoLockHeldException ex) {
+                    // do nothing
+                }
+                index = index + 1;
+                if (index == releaseLockSize) {
+                    index = 0;
+                }
+            } while (releasedLocks < releaseLockSize);
+            return;
         }
 
         @Override

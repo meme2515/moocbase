@@ -72,22 +72,50 @@ public class SortOperator {
      */
     public Run sortRun(Run run) {
         // TODO(hw3_part1): implement
-
-        return null;
+        ArrayList<Record> sortedRunsList = new ArrayList<>();
+        for (Record r : run) {
+            sortedRunsList.add(r);
+        }
+        Collections.sort(sortedRunsList, this.comparator);
+        Run sortedRun = createRun();
+        sortedRun.addRecords(sortedRunsList);
+        return sortedRun;
     }
 
     /**
      * Given a list of sorted runs, returns a new run that is the result
      * of merging the input runs. You should use a Priority Queue (java.util.PriorityQueue)
-     * to determine which record should be should be added to the output run next.
+     * to determine which record should be added to the output run next.
      * It is recommended that your Priority Queue hold Pair<Record, Integer> objects
      * where a Pair (r, i) is the Record r with the smallest value you are
      * sorting on currently unmerged from run i.
      */
     public Run mergeSortedRuns(List<Run> runs) {
         // TODO(hw3_part1): implement
-
-        return null;
+        PriorityQueue<Pair<Record, Integer>> pQueue = new PriorityQueue<>(new RecordPairComparator());
+        ArrayList<Iterator<Record>> runsIter = new ArrayList<>();
+        ArrayList<Record> sortedRunsList = new ArrayList<>();
+        for (Run r : runs) {
+            runsIter.add(r.iterator());
+        }
+        int i = 0;
+        for (Iterator<Record> rI : runsIter) {
+            if (rI.hasNext()) {
+                Pair<Record, Integer> recordPair = new Pair(rI.next(), i);
+                pQueue.add(recordPair);
+            }
+            ++i;
+        }
+        do {
+            Pair<Record, Integer> head = pQueue.poll();
+            sortedRunsList.add(head.getFirst());
+            if (runsIter.get(head.getSecond()).hasNext()) {
+                pQueue.add(new Pair(runsIter.get(head.getSecond()).next(), head.getSecond()));
+            }
+        } while (pQueue.size() != 0);
+        Run sortedRun = createRun();
+        sortedRun.addRecords(sortedRunsList);
+        return sortedRun;
     }
 
     /**
@@ -97,8 +125,23 @@ public class SortOperator {
      */
     public List<Run> mergePass(List<Run> runs) {
         // TODO(hw3_part1): implement
-
-        return Collections.emptyList();
+        int listSize = runs.size();
+        int i = 0;
+        ArrayList<Run> outputRuns = new ArrayList<>();
+        ArrayList<Run> inputRuns = new ArrayList<>();
+        do {
+            for (int j = 0; j < numBuffers - 1; ++j) {
+                inputRuns.add(runs.get(i));
+                ++i;
+                if (i == listSize) {
+                    break;
+                }
+            }
+            Run outputRun = mergeSortedRuns(inputRuns);
+            outputRuns.add(outputRun);
+            inputRuns = new ArrayList<>();
+        } while (i < listSize);
+        return outputRuns;
     }
 
     /**
@@ -108,8 +151,24 @@ public class SortOperator {
      */
     public String sort() {
         // TODO(hw3_part1): implement
-
-        return this.tableName; // TODO(hw3_part1): replace this!
+        BacktrackingIterator<Page> pageIter = transaction.getPageIterator(tableName);
+        BacktrackingIterator<Record> blockIter;
+        ArrayList<Run> inputPass = new ArrayList<>();
+        do {
+            blockIter = transaction.getBlockIterator(tableName, pageIter, numBuffers);
+            Run run = createRunFromIterator(blockIter);
+            Run sortedRun = sortRun(run);
+            inputPass.add(sortedRun);
+        } while (pageIter.hasNext());
+        List<Run> outputPass;
+        if (inputPass.size() == 1) {
+            return inputPass.get(0).tableName();
+        }
+        do {
+            outputPass = mergePass(inputPass);
+            inputPass = (ArrayList<Run>) outputPass;
+        } while (outputPass.size() > 1);
+        return outputPass.get(0).tableName(); // TODO(hw3_part1): replace this!
     }
 
     public Iterator<Record> iterator() {
