@@ -108,7 +108,7 @@ public class Table implements BacktrackingIterable<Record> {
     // The number of records in the table.
     private long numRecords;
 
-    // The lock context.
+    // The lock context of the table.
     private LockContext lockContext;
 
     // Constructors //////////////////////////////////////////////////////////////
@@ -383,6 +383,7 @@ public class Table implements BacktrackingIterable<Record> {
     public String toString() {
         return "Table " + name;
     }
+
     // Helpers ///////////////////////////////////////////////////////////////////
     private Page fetchPage(long pageNum) {
         try {
@@ -445,6 +446,25 @@ public class Table implements BacktrackingIterable<Record> {
             throw new DatabaseException(msg);
         }
     }
+
+    // Locking ///////////////////////////////////////////////////////////////////
+
+    /**
+     * Enables auto-escalation. All future requests for pages of this table by transactions
+     * that hold locks on at least 20% of the locks on the table's pages when this table
+     * has at least 10 pages should escalate to a table-level lock before any locks are requested.
+     */
+//    public void enableAutoEscalate() {
+//        // TODO(hw4_part2): implement
+//    }
+
+    /**
+     * Disables auto-escalation. No future requests for pages of this table should result in
+     * an automatic escalation to a table-level lock.
+     */
+//    public void disableAutoEscalate() {
+//        // TODO(hw4_part2): implement
+//    }
 
     // Iterators /////////////////////////////////////////////////////////////////
     public BacktrackingIterator<RecordId> ridIterator() {
